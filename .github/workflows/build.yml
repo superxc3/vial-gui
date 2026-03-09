@@ -3,24 +3,24 @@ name: Build
 on:
   push:
     tags: ['v*']
-    branches: ['xcmkb']   # builds on every push to your branch (artifacts only, no release)
-  workflow_dispatch:       # manual trigger from GitHub UI
+    branches: ['xcmkb']
+  workflow_dispatch:
 
 permissions:
-  contents: write    # needed to create GitHub Releases
+  contents: write
 
 jobs:
-  # ── Windows ────────────────────────────────────────────────────────────────
+  # ── Windows Build ──────────────────────────────────────────────────────────
   build-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-    - uses: actions/setup-python@v4
-      with:
-        python-version: '3.6.x'
-        architecture: 'x64'
-        
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.6.x'
+          architecture: 'x64'
+          
       - name: Install dependencies
         run: |
           pip install --upgrade pip
@@ -57,19 +57,13 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path target/Vial/* -DestinationPath target/Vial-Windows.zip
 
-      - name: Upload artifact (always)
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: Vial-Windows
           path: target/Vial-Windows.zip
 
-      - name: Attach to GitHub Release (tags only)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: target/Vial-Windows.zip
-
-  # ── macOS ──────────────────────────────────────────────────────────────────
+  # ── macOS Build ────────────────────────────────────────────────────────────
   build-mac:
     runs-on: macos-latest
     steps:
@@ -108,8 +102,6 @@ jobs:
           import importlib, os, sys
           module = importlib.import_module('fbs_runtime._frozen')
           module.BUILD_SETTINGS = {'app_name': 'Vial', 'version': '0.7.5', 'author': 'xcmkb'}
-          # fbs looks in Contents/Resources/ but PyInstaller puts files in Contents/MacOS/
-          # Patch get_resource_dirs to check both locations.
           _orig = module.get_resource_dirs
           def _patched():
               dirs = _orig()
@@ -144,14 +136,49 @@ jobs:
             "target/Vial-Mac.dmg" \
             "target/Vial.app"
 
-      - name: Upload artifact (always)
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: Vial-Mac
           path: target/Vial-Mac.dmg
 
-      - name: Attach to GitHub Release (tags only)
-        if: startsWith(github.ref, 'refs/tags/')
+  # ── Unified Release (Triggers only on Tags) ────────────────────────────────
+  release:
+    needs: [build-windows, build-mac]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Vial-Windows
+          path: ./release-assets
+
+      - name: Download Mac Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Vial-Mac
+          path: ./release-assets
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: target/Vial-Mac.dmg
+          files: |
+            release-assets/Vial-Windows.zip
+            release-assets/Vial-Mac.dmg
+          name: XCMKB Vial-GUI ${{ github.ref_name }}
+          body: |
+            ### 🛠️ XCMKB Specialized Build
+            Official custom build for XCMKB keyboards.
+            
+            **Included Assets:**
+            - Windows Portable (.zip)
+            - macOS Disk Image (.dmg)
+            
+            **Changes:**
+            - Custom Trackpad & OLED configurators.
+            - Optimized per-key RGB support for SoflePLUS2.
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

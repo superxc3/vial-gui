@@ -71,12 +71,17 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.9' # Downgraded from 3.11 for better PyQt5 compatibility
+          python-version: '3.9'
+
+      - name: Install Qt and Tools
+        run: |
+          brew install qt@5
+          echo "/usr/local/opt/qt@5/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
         run: |
           python3 -m pip install --upgrade pip setuptools wheel
-          python3 -m pip install "pyinstaller==6.10.0" fbs "PyQt5==5.15.9" keyboard simpleeval certifi
+          python3 -m pip install "pyinstaller==6.10.0" fbs "PyQt5==5.15.6" keyboard simpleeval certifi
           python3 -m pip install "git+https://github.com/vial-kb/cython-hidapi@fa31fd46e709ac4adba80bd516b1290dd56f43e9#egg=hidapi"
 
       - name: Create Icon.icns

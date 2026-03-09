@@ -142,7 +142,7 @@ jobs:
           name: Vial-Mac
           path: target/Vial-Mac.dmg
 
-  # ── Unified Release (Triggers only on Tags) ────────────────────────────────
+# ── Unified Release (v0.7.5a-xcmkb) ────────────────────────────────────────
   release:
     needs: [build-windows, build-mac]
     runs-on: ubuntu-latest
@@ -160,6 +160,9 @@ jobs:
           name: Vial-Mac
           path: ./release-assets
 
+      - name: Debug - List Files
+        run: ls -R ./release-assets
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -168,16 +171,8 @@ jobs:
             release-assets/Vial-Mac.dmg
           name: XCMKB Vial-GUI ${{ github.ref_name }}
           body: |
-            ### 🛠️ XCMKB Specialized Build
-            Official custom build for XCMKB keyboards.
-            
-            **Included Assets:**
-            - Windows Portable (.zip)
-            - macOS Disk Image (.dmg)
-            
-            **Changes:**
-            - Custom Trackpad & OLED configurators.
-            - Optimized per-key RGB support for SoflePLUS2.
+            ### 🛠️ XCMKB Specialized Build (v0.7.5a)
+            Custom build for XCMKB keyboards.
           draft: false
           prerelease: false
         env:

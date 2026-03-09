@@ -26,9 +26,11 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Get Python
-      run: curl https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-macosx${MACOSX_DEPLOYMENT_TARGET}.pkg -o "python.pkg"
-
+    - name: Get Python 3.6.8
+      run: |
+        curl https://www.python.org/ftp/python/3.6.8/python-3.6.8-macosx10.9.pkg -o "python.pkg"
+        sudo installer -pkg python.pkg -target /
+        
     - name: Verify download
       run: shasum -a 256 -c <<< '4bcd53faffc98d193ef7cdccd5668de3829c702af4db45258819a84a2cab60d0 *python.pkg'
 
@@ -37,10 +39,11 @@ jobs:
         sudo installer -pkg python.pkg -target /
 
     - name: Setup venv
-      run: |
-        python3.6 -m venv venv
-        source venv/bin/activate
-        pip install -r requirements.txt
+          run: |
+            python3 -m venv venv
+            source venv/bin/activate
+            pip install --upgrade pip setuptools wheel
+            pip install -r requirements.txt
 
     - name: Build
       run: |

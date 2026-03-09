@@ -13,8 +13,12 @@ g_device_changes = 0
 
 def device_changed(hwnd, msg, wp, lp):
     global g_device_changes
-    if wp in [win32con.DBT_DEVICEARRIVAL, win32con.DBT_DEVICEREMOVECOMPLETE]:
-        g_device_changes += 1
+    try:
+        if wp in [win32con.DBT_DEVICEARRIVAL, win32con.DBT_DEVICEREMOVECOMPLETE]:
+            g_device_changes += 1
+    except TypeError:
+        pass
+    return 0
 
 
 class AutorefreshThreadWin(AutorefreshThread):
@@ -40,7 +44,10 @@ class AutorefreshThreadWin(AutorefreshThread):
 
         while True:
             for x in range(100):
-                win32gui.PumpWaitingMessages()
+                try:
+                    win32gui.PumpWaitingMessages()
+                except TypeError:
+                    pass
                 time.sleep(0.01)
 
             if g_device_changes > 0:

@@ -10,32 +10,21 @@ permissions:
   contents: write
 
 jobs:
-  # ── Windows Build ──────────────────────────────────────────────────────────
+  # ── Windows ────────────────────────────────────────────────────────────────
   build-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.6.x'
-          architecture: 'x64'
-          
+          python-version: '3.11'
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install "pyinstaller==6.10.0" fbs "PyQt5==5.15.6" keyboard simpleeval pywin32 certifi
+          python -m pip install "pyinstaller==6.10.0" fbs "PyQt5==5.15.9" keyboard simpleeval pywin32 certifi
           python -m pip install "git+https://github.com/vial-kb/cython-hidapi@fa31fd46e709ac4adba80bd516b1290dd56f43e9#egg=hidapi"
-
-      - name: Generate fbs runtime hook
-        shell: bash
-        run: |
-          mkdir -p target/PyInstaller
-          cat > target/PyInstaller/fbs_pyinstaller_hook.py << 'EOF'
-          import importlib
-          module = importlib.import_module('fbs_runtime._frozen')
-          module.BUILD_SETTINGS = {'app_name': 'Vial', 'version': '0.7.5', 'author': 'xcmkb'}
-          EOF
 
       - name: Freeze
         shell: pwsh
@@ -50,7 +39,7 @@ jobs:
             --add-data "src/main/resources/base;." `
             --add-data "src/main/icons/Icon.ico;." `
             --paths "src/main/python" `
-            --runtime-hook "target/PyInstaller/fbs_pyinstaller_hook.py" `
+            --runtime-hook ".github/hooks/fbs_hook_win.py" `
             "src/main/python/main.py"
 
       - name: Zip portable build
@@ -63,7 +52,7 @@ jobs:
           name: Vial-Windows
           path: target/Vial-Windows.zip
 
-  # ── macOS Build ────────────────────────────────────────────────────────────
+  # ── macOS ──────────────────────────────────────────────────────────────────
   build-mac:
     runs-on: macos-latest
     steps:
@@ -71,17 +60,12 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
-
-      - name: Install Qt and Tools
-        run: |
-          brew install qt@5
-          echo "/usr/local/opt/qt@5/bin" >> $GITHUB_PATH
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
           python3 -m pip install --upgrade pip setuptools wheel
-          python3 -m pip install "pyinstaller==6.10.0" fbs "PyQt5==5.15.6" keyboard simpleeval certifi
+          python3 -m pip install "pyinstaller==6.10.0" fbs "PyQt5==5.15.9" keyboard simpleeval certifi
           python3 -m pip install "git+https://github.com/vial-kb/cython-hidapi@fa31fd46e709ac4adba80bd516b1290dd56f43e9#egg=hidapi"
 
       - name: Create Icon.icns
@@ -100,21 +84,6 @@ jobs:
           cp src/main/icons/mac/1024.png  /tmp/Vial.iconset/icon_512x512@2x.png
           iconutil -c icns /tmp/Vial.iconset -o src/main/icons/Icon.icns
 
-      - name: Generate fbs runtime hook
-        run: |
-          mkdir -p target/PyInstaller
-          cat > target/PyInstaller/fbs_pyinstaller_hook.py << 'EOF'
-          import importlib, os, sys
-          module = importlib.import_module('fbs_runtime._frozen')
-          module.BUILD_SETTINGS = {'app_name': 'Vial', 'version': '0.7.5', 'author': 'xcmkb'}
-          _orig = module.get_resource_dirs
-          def _patched():
-              dirs = _orig()
-              dirs.append(os.path.dirname(sys.executable))
-              return dirs
-          module.get_resource_dirs = _patched
-          EOF
-
       - name: Freeze
         run: |
           python3 -m PyInstaller \
@@ -126,7 +95,7 @@ jobs:
             --add-data "src/main/resources/base:." \
             --add-data "src/main/icons/Icon.icns:." \
             --paths "src/main/python" \
-            --runtime-hook "target/PyInstaller/fbs_pyinstaller_hook.py" \
+            --runtime-hook ".github/hooks/fbs_hook_mac.py" \
             "src/main/python/main.py"
 
       - name: Package as DMG
@@ -147,26 +116,23 @@ jobs:
           name: Vial-Mac
           path: target/Vial-Mac.dmg
 
-  # ── Unified Release (v0.7.5a-xcmkb) ────────────────────────────────────────
+  # ── Release (tags only) ────────────────────────────────────────────────────
   release:
     needs: [build-windows, build-mac]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
-      - name: Download Windows Artifact
+      - name: Download Windows artifact
         uses: actions/download-artifact@v4
         with:
           name: Vial-Windows
           path: ./release-assets
 
-      - name: Download Mac Artifact
+      - name: Download Mac artifact
         uses: actions/download-artifact@v4
         with:
           name: Vial-Mac
           path: ./release-assets
-
-      - name: Debug - List Files
-        run: ls -R ./release-assets
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -176,8 +142,11 @@ jobs:
             release-assets/Vial-Mac.dmg
           name: XCMKB Vial-GUI ${{ github.ref_name }}
           body: |
-            ### 🛠️ XCMKB Specialized Build (v0.7.5a)
-            Custom build for XCMKB keyboards.
+            Custom Vial build for XCMKB keyboards (SoflePLUS2).
+
+            **Download:**
+            - Windows: `Vial-Windows.zip` — extract and run `Vial.exe`
+            - Mac: `Vial-Mac.dmg` — open and drag to Applications
           draft: false
           prerelease: false
         env:

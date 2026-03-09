@@ -25,6 +25,8 @@ from editor.layout_editor import LayoutEditor
 from editor.macro_recorder import MacroRecorder
 from editor.qmk_settings import QmkSettings
 from editor.rgb_configurator import RGBConfigurator
+from editor.trackpad_configurator import TrackpadConfigurator
+from editor.oled_configurator import OledConfigurator
 from tabbed_keycodes import TabbedKeycodes
 from editor.tap_dance import TapDance
 from unlocker import Unlocker
@@ -84,12 +86,18 @@ class MainWindow(QMainWindow):
         QmkSettings.initialize(appctx)
         self.qmk_settings = QmkSettings()
         self.matrix_tester = MatrixTest(self.layout_editor)
-        self.rgb_configurator = RGBConfigurator()
+        self.rgb_configurator = RGBConfigurator(self.layout_editor)
+        self.trackpad_configurator = TrackpadConfigurator()
+        self.oled_configurator = OledConfigurator()
+
+        self.keymap_editor.layer_name_changed.connect(
+            self.rgb_configurator.indicator_widget.on_layer_names_changed)
 
         self.editors = [(self.keymap_editor, "Keymap"), (self.layout_editor, "Layout"), (self.macro_recorder, "Macros"),
                         (self.rgb_configurator, "Lighting"), (self.tap_dance, "Tap Dance"), (self.combos, "Combos"),
                         (self.key_override, "Key Overrides"), (self.alt_repeat_key, "Alt Repeat Key"),
                         (self.qmk_settings, "QMK Settings"), (self.matrix_tester, "Matrix tester"),
+                        (self.trackpad_configurator, "Trackpad"), (self.oled_configurator, "OLED"),
                         (self.firmware_flasher, "Firmware updater")]
 
         Unlocker.global_layout_editor = self.layout_editor
@@ -338,7 +346,8 @@ class MainWindow(QMainWindow):
 
         for e in [self.layout_editor, self.keymap_editor, self.firmware_flasher, self.macro_recorder,
                   self.tap_dance, self.combos, self.key_override, self.alt_repeat_key,
-                  self.qmk_settings, self.matrix_tester, self.rgb_configurator]:
+                  self.qmk_settings, self.matrix_tester, self.rgb_configurator,
+                  self.trackpad_configurator, self.oled_configurator]:
             e.rebuild(self.autorefresh.current_device)
 
     def refresh_tabs(self):

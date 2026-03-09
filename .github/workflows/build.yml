@@ -1,0 +1,156 @@
+name: Build
+
+on:
+  push:
+    tags: ['v*']
+    branches: ['xcmkb']   # builds on every push to your branch (artifacts only, no release)
+  workflow_dispatch:       # manual trigger from GitHub UI
+
+permissions:
+  contents: write    # needed to create GitHub Releases
+
+jobs:
+  # ── Windows ────────────────────────────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install "pyinstaller>=6.0" fbs "PyQt5==5.15.9" keyboard simpleeval pywin32 certifi
+          pip install "git+https://github.com/vial-kb/cython-hidapi@fa31fd46e709ac4adba80bd516b1290dd56f43e9#egg=hidapi"
+
+      - name: Generate fbs runtime hook
+        shell: bash
+        run: |
+          mkdir -p target/PyInstaller
+          cat > target/PyInstaller/fbs_pyinstaller_hook.py << 'EOF'
+          import importlib
+          module = importlib.import_module('fbs_runtime._frozen')
+          module.BUILD_SETTINGS = {'app_name': 'Vial', 'version': '0.7.5', 'author': 'xcmkb'}
+          EOF
+
+      - name: Freeze
+        shell: pwsh
+        run: |
+          python -m PyInstaller `
+            --name "Vial" --noupx --noconfirm --clean --windowed `
+            --contents-directory "." `
+            --icon "src/main/icons/Icon.ico" `
+            --distpath "target" `
+            --specpath "target/PyInstaller" `
+            --workpath "target/PyInstaller" `
+            --add-data "src/main/resources/base;." `
+            --add-data "src/main/icons/Icon.ico;." `
+            --paths "src/main/python" `
+            --runtime-hook "target/PyInstaller/fbs_pyinstaller_hook.py" `
+            "src/main/python/main.py"
+
+      - name: Zip portable build
+        shell: pwsh
+        run: Compress-Archive -Path target/Vial/* -DestinationPath target/Vial-Windows.zip
+
+      - name: Upload artifact (always)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vial-Windows
+          path: target/Vial-Windows.zip
+
+      - name: Attach to GitHub Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/Vial-Windows.zip
+
+  # ── macOS ──────────────────────────────────────────────────────────────────
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install "pyinstaller>=6.0" fbs "PyQt5==5.15.9" keyboard simpleeval certifi
+          pip install "git+https://github.com/vial-kb/cython-hidapi@fa31fd46e709ac4adba80bd516b1290dd56f43e9#egg=hidapi"
+
+      - name: Create Icon.icns
+        run: |
+          mkdir -p /tmp/Vial.iconset
+          cp src/main/icons/base/16.png   /tmp/Vial.iconset/icon_16x16.png
+          cp src/main/icons/mac/128.png   /tmp/Vial.iconset/icon_16x16@2x.png
+          cp src/main/icons/base/16.png   /tmp/Vial.iconset/icon_32x32.png
+          cp src/main/icons/mac/128.png   /tmp/Vial.iconset/icon_32x32@2x.png
+          cp src/main/icons/mac/128.png   /tmp/Vial.iconset/icon_64x64.png
+          cp src/main/icons/mac/128.png   /tmp/Vial.iconset/icon_128x128.png
+          cp src/main/icons/mac/256.png   /tmp/Vial.iconset/icon_128x128@2x.png
+          cp src/main/icons/mac/256.png   /tmp/Vial.iconset/icon_256x256.png
+          cp src/main/icons/mac/512.png   /tmp/Vial.iconset/icon_256x256@2x.png
+          cp src/main/icons/mac/512.png   /tmp/Vial.iconset/icon_512x512.png
+          cp src/main/icons/mac/1024.png  /tmp/Vial.iconset/icon_512x512@2x.png
+          iconutil -c icns /tmp/Vial.iconset -o src/main/icons/Icon.icns
+
+      - name: Generate fbs runtime hook
+        run: |
+          mkdir -p target/PyInstaller
+          cat > target/PyInstaller/fbs_pyinstaller_hook.py << 'EOF'
+          import importlib, os, sys
+          module = importlib.import_module('fbs_runtime._frozen')
+          module.BUILD_SETTINGS = {'app_name': 'Vial', 'version': '0.7.5', 'author': 'xcmkb'}
+          # fbs looks in Contents/Resources/ but PyInstaller puts files in Contents/MacOS/
+          # Patch get_resource_dirs to check both locations.
+          _orig = module.get_resource_dirs
+          def _patched():
+              dirs = _orig()
+              dirs.append(os.path.dirname(sys.executable))
+              return dirs
+          module.get_resource_dirs = _patched
+          EOF
+
+      - name: Freeze
+        run: |
+          python -m PyInstaller \
+            --name "Vial" --noupx --noconfirm --clean --windowed \
+            --icon "src/main/icons/Icon.icns" \
+            --distpath "target" \
+            --specpath "target/PyInstaller" \
+            --workpath "target/PyInstaller" \
+            --add-data "src/main/resources/base:." \
+            --add-data "src/main/icons/Icon.icns:." \
+            --paths "src/main/python" \
+            --runtime-hook "target/PyInstaller/fbs_pyinstaller_hook.py" \
+            "src/main/python/main.py"
+
+      - name: Package as DMG
+        run: |
+          brew install create-dmg
+          create-dmg \
+            --volname "Vial" \
+            --window-size 600 400 \
+            --icon-size 128 \
+            --icon "Vial.app" 150 180 \
+            --app-drop-link 450 180 \
+            "target/Vial-Mac.dmg" \
+            "target/Vial.app"
+
+      - name: Upload artifact (always)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vial-Mac
+          path: target/Vial-Mac.dmg
+
+      - name: Attach to GitHub Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/Vial-Mac.dmg

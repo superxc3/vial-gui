@@ -17,12 +17,14 @@ class KeyWidget:
         self.on = False
         self.masked = False
         self.pressed = False
+        self.selected = False
         self.desc = desc
         self.text = ""
         self.mask_text = ""
         self.tooltip = ""
         self.color = None
         self.mask_color = None
+        self.bg_color = None
         self.scale = 0
 
         self.rotation_angle = desc.rotation_angle
@@ -195,6 +197,9 @@ class KeyWidget:
 
     def setMaskColor(self, color):
         self.mask_color = color
+
+    def setBgColor(self, color):
+        self.bg_color = color
 
     def __repr__(self):
         qualifiers = ["KeyboardWidget"]
@@ -421,25 +426,35 @@ class KeyboardWidget(QWidget):
             qp.rotate(key.rotation_angle)
             qp.translate(-key.rotation_x, -key.rotation_y)
 
-            active = key.active or (self.active_key == key and not self.active_mask)
+            active = key.active or (self.active_key == key and not self.active_mask) or key.selected
 
             # draw keycap background/drop-shadow
             qp.setPen(active_pen if active else Qt.NoPen)
-            brush = background_brush
-            if key.pressed:
+            if key.bg_color is not None:
+                _bg = QBrush(key.bg_color.darker(150))
+                _bg.setStyle(Qt.SolidPattern)
+                brush = _bg
+            elif key.pressed:
                 brush = background_pressed_brush
             elif key.on:
                 brush = background_on_brush
+            else:
+                brush = background_brush
             qp.setBrush(brush)
             qp.drawPath(key.background_draw_path)
 
             # draw keycap foreground
             qp.setPen(Qt.NoPen)
-            brush = foreground_brush
-            if key.pressed:
+            if key.bg_color is not None:
+                _fg = QBrush(key.bg_color)
+                _fg.setStyle(Qt.SolidPattern)
+                brush = _fg
+            elif key.pressed:
                 brush = foreground_pressed_brush
             elif key.on:
                 brush = foreground_on_brush
+            else:
+                brush = foreground_brush
             qp.setBrush(brush)
             qp.drawPath(key.foreground_draw_path)
 

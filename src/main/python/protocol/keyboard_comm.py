@@ -13,7 +13,11 @@ from protocol.constants import CMD_VIA_GET_PROTOCOL_VERSION, CMD_VIA_GET_KEYBOAR
     CMD_VIA_GET_LAYER_COUNT, CMD_VIA_KEYMAP_GET_BUFFER, CMD_VIA_VIAL_PREFIX, VIA_LAYOUT_OPTIONS, \
     VIA_SWITCH_MATRIX_STATE, QMK_BACKLIGHT_BRIGHTNESS, QMK_BACKLIGHT_EFFECT, QMK_RGBLIGHT_BRIGHTNESS, \
     QMK_RGBLIGHT_EFFECT, QMK_RGBLIGHT_EFFECT_SPEED, QMK_RGBLIGHT_COLOR, VIALRGB_GET_INFO, VIALRGB_GET_MODE, \
-    VIALRGB_GET_SUPPORTED, VIALRGB_SET_MODE, CMD_VIAL_GET_KEYBOARD_ID, CMD_VIAL_GET_SIZE, CMD_VIAL_GET_DEFINITION, \
+    VIALRGB_GET_SUPPORTED, VIALRGB_SET_MODE, VIALRGB_GET_NUMBER_LEDS, VIALRGB_GET_LED_INFO, VIALRGB_DIRECT_FASTSET, \
+    VIALRGB_GET_INDICATOR_LEDS, VIALRGB_GET_INDICATOR_COLORS, VIALRGB_SET_INDICATOR_LEDS, VIALRGB_SET_INDICATOR_COLORS, \
+    VIALRGB_GET_TRACKPAD_SETTINGS, VIALRGB_SET_TRACKPAD_SETTINGS, \
+    VIALRGB_GET_TRACKPAD_LAYERS, VIALRGB_SET_TRACKPAD_LAYERS, \
+    CMD_VIAL_GET_KEYBOARD_ID, CMD_VIAL_GET_SIZE, CMD_VIAL_GET_DEFINITION, \
     CMD_VIAL_GET_ENCODER, CMD_VIAL_SET_ENCODER, CMD_VIAL_GET_UNLOCK_STATUS, CMD_VIAL_UNLOCK_START, CMD_VIAL_UNLOCK_POLL, \
     CMD_VIAL_LOCK, CMD_VIAL_QMK_SETTINGS_QUERY, CMD_VIAL_QMK_SETTINGS_GET, CMD_VIAL_QMK_SETTINGS_SET, \
     CMD_VIAL_QMK_SETTINGS_RESET, BUFFER_FETCH_CHUNK, VIAL_PROTOCOL_QMK_SETTINGS
@@ -66,6 +70,40 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
         self.rgb_mode = self.rgb_speed = self.rgb_version = self.rgb_maximum_brightness = -1
         self.rgb_hsv = (0, 0, 0)
         self.rgb_supported_effects = set()
+        self.vialrgb_direct_supported = False
+        self.vialrgb_num_leds = 0
+        self.vialrgb_led_map = {}
+        self.vialrgb_direct_colors = []
+        self.indicator_supported = False
+        self.trackpad_supported = False
+        self.oled_supported = False
+        self.oled_config = {
+            'row1': 'SOFLE',
+            'layer_names': ['L{}'.format(i) for i in range(10)],
+        }
+        self.trackpad_settings = {
+            'cursor_dpi': 3, 'scroll_speed': 4,
+            'scroll_invert_v': False, 'scroll_invert_h': False,
+            'zoom_enabled': True, 'trackpad_enabled': True,
+            'sniper_scale': 1, 'taps_as_clicks': False,
+            'sniper_modifier_mask': 0,
+        }
+        self.trackpad_layers = {'scroll': 0, 'swipe2': 0, 'swipe3': 0}
+        # 10 role slots: index 0 = Caps Lock, 1-9 = Layers 1-9
+        # Each entry: {'leds': [int, ...] (unlimited list of LED indices), 'r','g','b': int}
+        # Stored as flat LED→role map in firmware; converted here for GUI convenience.
+        self.indicator_assignments = [
+            {'leds': [], 'r': 128, 'g':   0, 'b':   0},  # caps
+            {'leds': [], 'r': 128, 'g':   0, 'b': 128},  # layer 1
+            {'leds': [], 'r': 255, 'g': 215, 'b':   0},  # layer 2
+            {'leds': [], 'r':   0, 'g': 128, 'b': 128},  # layer 3
+            {'leds': [], 'r': 255, 'g': 128, 'b':   0},  # layer 4
+            {'leds': [], 'r':   0, 'g':   0, 'b': 128},  # layer 5
+            {'leds': [], 'r': 128, 'g':   0, 'b': 128},  # layer 6
+            {'leds': [], 'r': 255, 'g': 192, 'b': 203},  # layer 7
+            {'leds': [], 'r':   0, 'g': 255, 'b': 127},  # layer 8
+            {'leds': [], 'r': 255, 'g': 255, 'b': 255},  # layer 9
+        ]
 
         self.via_protocol = self.vial_protocol = self.keyboard_id = -1
 
@@ -258,6 +296,22 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
                         self.rgb_supported_effects.add(value)
                     max_effect = max(max_effect, value)
 
+            if self.rgb_supported_effects & {1, 45}:  # Direct Control or Customise
+                self.reload_vialrgb_direct_leds()
+                try:
+                    self.reload_vialrgb_indicator_config()
+                except Exception:
+                    pass
+                try:
+                    self.reload_trackpad_settings()
+                    self.reload_trackpad_layers()
+                except Exception:
+                    pass
+                try:
+                    self.reload_oled_config()
+                except Exception:
+                    pass
+
     def reload_rgb(self):
         if self.lighting_qmk_rgblight:
             self.underglow_brightness = self.usb_send(
@@ -404,6 +458,21 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
         data["alt_repeat_key"] = self.save_alt_repeat_key()
         data["settings"] = self.settings
 
+        if self.oled_supported:
+            data["oled_config"] = {
+                "row1": self.oled_config.get("row1", ""),
+                "layer_names": list(self.oled_config.get("layer_names", [])),
+            }
+
+        if getattr(self, 'vialrgb_direct_supported', False) and self.vialrgb_direct_colors:
+            data["vialrgb_direct_colors"] = [list(c) for c in self.vialrgb_direct_colors]
+
+        if getattr(self, 'indicator_supported', False):
+            data["indicator_assignments"] = [
+                {'leds': list(a['leds']), 'r': a['r'], 'g': a['g'], 'b': a['b']}
+                for a in self.indicator_assignments
+            ]
+
         return json.dumps(data).encode("utf-8")
 
     def restore_layout(self, data):
@@ -438,6 +507,34 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
             qsid = int(qsid)
             if QmkSettings.is_qsid_supported(qsid):
                 self.qmk_settings_set(qsid, value)
+
+        if self.oled_supported and "oled_config" in data:
+            oled = data["oled_config"]
+            self.set_oled_config(
+                oled.get("row1", ""),
+                oled.get("layer_names", []),
+            )
+
+        if getattr(self, 'vialrgb_direct_supported', False) and "vialrgb_direct_colors" in data:
+            saved = data["vialrgb_direct_colors"]
+            if len(saved) == self.vialrgb_num_leds:
+                colors = [tuple(c) for c in saved]
+                self.vialrgb_direct_colors = colors
+                self.set_vialrgb_direct_fastset(0, colors)
+
+        if getattr(self, 'indicator_supported', False) and "indicator_assignments" in data:
+            saved = data["indicator_assignments"]
+            assignments = list(self.indicator_assignments)
+            for i, a in enumerate(saved[:10]):
+                assignments[i] = {
+                    'leds': list(a.get('leds', [])),
+                    'r': a.get('r', 0),
+                    'g': a.get('g', 0),
+                    'b': a.get('b', 0),
+                }
+            self.indicator_assignments = assignments
+            self.set_vialrgb_indicator_leds(assignments)
+            self.set_vialrgb_indicator_colors(assignments)
 
     def reset(self):
         self.usb_send(self.dev, struct.pack("B", 0xB))
@@ -540,3 +637,212 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
     def set_vialrgb_color(self, h, s, v):
         self.rgb_hsv = (h, s, v)
         self._vialrgb_set_mode()
+
+    def reload_vialrgb_direct_leds(self):
+        """Fetch LED count and per-LED matrix positions from the keyboard."""
+        data = self.usb_send(self.dev, struct.pack("BB", CMD_VIA_LIGHTING_GET_VALUE,
+                                                   VIALRGB_GET_NUMBER_LEDS), retries=20)[2:]
+        self.vialrgb_num_leds = data[0] | (data[1] << 8)
+        if self.vialrgb_num_leds == 0:
+            return
+        self.vialrgb_direct_colors = [(0, 0, 0)] * self.vialrgb_num_leds
+        self.vialrgb_led_map = {}
+        for led_idx in range(self.vialrgb_num_leds):
+            data = self.usb_send(self.dev, struct.pack("<BBH", CMD_VIA_LIGHTING_GET_VALUE,
+                                                       VIALRGB_GET_LED_INFO, led_idx), retries=20)[2:]
+            row, col = data[3], data[4]
+            if row != 0xFF and col != 0xFF:
+                self.vialrgb_led_map[(row, col)] = led_idx
+        self.vialrgb_direct_supported = True
+
+    def set_vialrgb_direct_fastset(self, first_idx, hsv_list):
+        """Send per-LED HSV colors to the keyboard. hsv_list is [(H, S, V), ...]."""
+        LEDS_PER_PKT = 9  # 27 bytes / 3 bytes per LED; firmware limit per packet
+        for offset in range(0, len(hsv_list), LEDS_PER_PKT):
+            batch = hsv_list[offset:offset + LEDS_PER_PKT]
+            payload = struct.pack("<BBH", CMD_VIA_LIGHTING_SET_VALUE,
+                                  VIALRGB_DIRECT_FASTSET, first_idx + offset)
+            payload += struct.pack("B", len(batch))
+            for h, s, v in batch:
+                payload += struct.pack("BBB", h, s, v)
+            self.usb_send(self.dev, payload, retries=20)
+
+    def set_vialrgb_key_color(self, row, col, h, s, v):
+        """Set the direct RGB color for a single key by matrix position."""
+        led = self.vialrgb_led_map.get((row, col))
+        if led is not None:
+            self.vialrgb_direct_colors[led] = (h, s, v)
+            self.set_vialrgb_direct_fastset(led, [(h, s, v)])
+
+    def reload_vialrgb_indicator_config(self):
+        """Fetch per-role indicator bitmasks and colors from the keyboard.
+
+        One GET request per role (0x45 with role_idx). Response: 8-byte LE uint64 mask.
+        """
+        for role_idx in range(10):
+            data = self.usb_send(self.dev,
+                                 struct.pack("BBB", CMD_VIA_LIGHTING_GET_VALUE,
+                                             VIALRGB_GET_INDICATOR_LEDS, role_idx),
+                                 retries=20)[2:]
+            mask_bytes = (data + b'\x00' * 8)[:8]
+            mask = int.from_bytes(mask_bytes, 'little')
+            self.indicator_assignments[role_idx]['leds'] = [
+                i for i in range(min(self.vialrgb_num_leds, 64)) if (mask >> i) & 1
+            ]
+        # GET colors (0x46): 30 bytes, [r,g,b] per role (unchanged)
+        data = self.usb_send(self.dev, struct.pack("BB", CMD_VIA_LIGHTING_GET_VALUE,
+                                                   VIALRGB_GET_INDICATOR_COLORS), retries=20)[2:]
+        for i in range(10):
+            base = i * 3
+            if base + 2 < len(data):
+                self.indicator_assignments[i]['r'] = data[base]
+                self.indicator_assignments[i]['g'] = data[base + 1]
+                self.indicator_assignments[i]['b'] = data[base + 2]
+        self.indicator_supported = True
+
+    def set_vialrgb_indicator_leds(self, assignments):
+        """Send per-role bitmasks to the keyboard (one SET request per role)."""
+        for role_idx in range(10):
+            leds = assignments[role_idx].get('leds', [])
+            mask = 0
+            for led in leds:
+                if led < 64:
+                    mask |= (1 << led)
+            mask_bytes = mask.to_bytes(8, 'little')
+            self.usb_send(self.dev,
+                          struct.pack("BBB", CMD_VIA_LIGHTING_SET_VALUE,
+                                      VIALRGB_SET_INDICATOR_LEDS, role_idx) + mask_bytes,
+                          retries=20)
+            self.indicator_assignments[role_idx]['leds'] = [l for l in leds if l < 64]
+
+    def set_vialrgb_indicator_colors(self, colors_per_role):
+        """Send 30 bytes of [r,g,b] per role to the keyboard."""
+        msg = bytearray([CMD_VIA_LIGHTING_SET_VALUE, VIALRGB_SET_INDICATOR_COLORS])
+        for i in range(10):
+            if i < len(colors_per_role):
+                c = colors_per_role[i]
+                msg += bytes([c['r'], c['g'], c['b']])
+            else:
+                msg += b'\x00\x00\x00'
+        self.usb_send(self.dev, bytes(msg), retries=20)
+        for i, c in enumerate(colors_per_role[:10]):
+            self.indicator_assignments[i]['r'] = c['r']
+            self.indicator_assignments[i]['g'] = c['g']
+            self.indicator_assignments[i]['b'] = c['b']
+
+    def reload_trackpad_settings(self):
+        """Fetch trackpad settings from the keyboard (sub-ID 0x50)."""
+        data = self.usb_send(self.dev, struct.pack("BB", CMD_VIA_LIGHTING_GET_VALUE,
+                                                   VIALRGB_GET_TRACKPAD_SETTINGS), retries=20)[2:]
+        def _b(i, default=0): return data[i] if len(data) > i else default
+        self.trackpad_settings = {
+            'cursor_dpi':           max(1, min(6, _b(0, 3))),
+            'scroll_speed':         max(1, min(8, _b(1, 4))),
+            'scroll_invert_v':      bool(_b(2)),
+            'scroll_invert_h':      bool(_b(3)),
+            'zoom_enabled':         bool(_b(4, 1)),
+            'trackpad_enabled':     bool(_b(5, 1)),
+            'sniper_scale':         max(1, min(6, _b(6, 1))),
+            'taps_as_clicks':       bool(_b(7)),
+            'sniper_modifier_mask': _b(8),
+        }
+        self.trackpad_supported = True
+
+    def set_trackpad_settings(self, settings):
+        """Push trackpad settings to the keyboard (sub-ID 0x50) and save locally."""
+        msg = struct.pack("BBBBBBBBBBB",
+                          CMD_VIA_LIGHTING_SET_VALUE, VIALRGB_SET_TRACKPAD_SETTINGS,
+                          settings.get('cursor_dpi', 3),
+                          settings.get('scroll_speed', 4),
+                          1 if settings.get('scroll_invert_v') else 0,
+                          1 if settings.get('scroll_invert_h') else 0,
+                          1 if settings.get('zoom_enabled', True) else 0,
+                          1 if settings.get('trackpad_enabled', True) else 0,
+                          settings.get('sniper_scale', 1),
+                          1 if settings.get('taps_as_clicks') else 0,
+                          settings.get('sniper_modifier_mask', 0))
+        self.usb_send(self.dev, msg, retries=20)
+        self.trackpad_settings = dict(settings)
+
+    def reload_trackpad_layers(self):
+        """Fetch trackpad layer behaviour bitmasks (sub-ID 0x51)."""
+        data = self.usb_send(self.dev, struct.pack("BB", CMD_VIA_LIGHTING_GET_VALUE,
+                                                   VIALRGB_GET_TRACKPAD_LAYERS), retries=20)[2:]
+        def _w(i): return (data[i] | (data[i+1] << 8)) if len(data) > i+1 else 0
+        self.trackpad_layers = {
+            'scroll': _w(0),
+            'swipe2': _w(2),
+            'swipe3': _w(4),
+        }
+
+    def set_trackpad_layers(self, layers):
+        """Push trackpad layer bitmasks to the keyboard (sub-ID 0x51)."""
+        s = layers.get('scroll', 0)
+        s2 = layers.get('swipe2', 0)
+        s3 = layers.get('swipe3', 0)
+        msg = struct.pack("BBBBBBBB",
+                          CMD_VIA_LIGHTING_SET_VALUE, VIALRGB_SET_TRACKPAD_LAYERS,
+                          s & 0xFF, (s >> 8) & 0xFF,
+                          s2 & 0xFF, (s2 >> 8) & 0xFF,
+                          s3 & 0xFF, (s3 >> 8) & 0xFF)
+        self.usb_send(self.dev, msg, retries=20)
+        self.trackpad_layers = dict(layers)
+
+    def reload_oled_config(self):
+        """Fetch OLED label config from keyboard (sub-ID 0x52)."""
+        from protocol.constants import VIALRGB_GET_OLED_CONFIG
+        # Fetch row1 (item 0xFF)
+        data = self.usb_send(self.dev,
+                             struct.pack("BBB", CMD_VIA_LIGHTING_GET_VALUE,
+                                         VIALRGB_GET_OLED_CONFIG, 0xFF),
+                             retries=20)
+        self.oled_config['row1'] = data[3:8].rstrip(b'\x00').decode('ascii', errors='replace')
+        # Fetch each layer name (items 0-9)
+        names = []
+        for i in range(10):
+            data = self.usb_send(self.dev,
+                                 struct.pack("BBB", CMD_VIA_LIGHTING_GET_VALUE,
+                                             VIALRGB_GET_OLED_CONFIG, i),
+                                 retries=20)
+            names.append(data[3:8].rstrip(b'\x00').decode('ascii', errors='replace'))
+        self.oled_config['layer_names'] = names
+        self.oled_supported = True
+
+    def set_oled_config(self, row1, layer_names):
+        """Push OLED label config to keyboard (sub-ID 0x52), one item per packet."""
+        from protocol.constants import VIALRGB_SET_OLED_CONFIG
+        def _send(item, name):
+            nb = name.encode('ascii', errors='replace')[:5].ljust(5, b'\x00')
+            self.usb_send(self.dev,
+                          struct.pack("BBB5s", CMD_VIA_LIGHTING_SET_VALUE,
+                                      VIALRGB_SET_OLED_CONFIG, item, nb),
+                          retries=20)
+        _send(0xFF, row1)
+        for i, name in enumerate(layer_names[:10]):
+            _send(i, name)
+        self.oled_config['row1'] = row1
+        self.oled_config['layer_names'] = list(layer_names[:10])
+
+    def set_oled_row1(self, name):
+        """Push only the keyboard name (row 1) to the OLED."""
+        from protocol.constants import VIALRGB_SET_OLED_CONFIG
+        nb = name.encode('ascii', errors='replace')[:5].ljust(5, b'\x00')
+        self.usb_send(self.dev,
+                      struct.pack("BBB5s", CMD_VIA_LIGHTING_SET_VALUE,
+                                  VIALRGB_SET_OLED_CONFIG, 0xFF, nb),
+                      retries=20)
+        self.oled_config['row1'] = name[:5]
+
+    def set_oled_layer_name(self, layer_idx, name):
+        """Push a single layer name to the OLED (layer_idx 0-9)."""
+        from protocol.constants import VIALRGB_SET_OLED_CONFIG
+        nb = name.encode('ascii', errors='replace')[:5].ljust(5, b'\x00')
+        self.usb_send(self.dev,
+                      struct.pack("BBB5s", CMD_VIA_LIGHTING_SET_VALUE,
+                                  VIALRGB_SET_OLED_CONFIG, layer_idx, nb),
+                      retries=20)
+        names = self.oled_config.get('layer_names', [''] * 10)
+        while len(names) <= layer_idx:
+            names.append('')
+        names[layer_idx] = name[:5]
+        self.oled_config['layer_names'] = names

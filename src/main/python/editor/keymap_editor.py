@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 import json
 
-from PyQt5.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QMessageBox, QWidget
+from PyQt5.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QMessageBox, QWidget
 from PyQt5.QtCore import Qt, pyqtSignal
 
 from any_keycode_dialog import AnyKeycodeDialog
@@ -25,6 +25,8 @@ class ClickableWidget(QWidget):
 
 class KeymapEditor(BasicEditor):
 
+    layer_name_changed = pyqtSignal()
+
     def __init__(self, layout_editor):
         super().__init__()
 
@@ -45,8 +47,34 @@ class KeymapEditor(BasicEditor):
         self.container.clicked.connect(self.on_key_clicked)
         self.container.deselected.connect(self.on_key_deselected)
 
+        # OLED layer name row — hidden until keyboard reports oled_supported
+        self.layer_name_edit = QLineEdit()
+        self.layer_name_edit.setMaxLength(5)
+        self.layer_name_edit.setFixedWidth(60)
+        self.layer_name_edit.setPlaceholderText("name")
+        self.layer_name_counter = QLabel("0/5")
+        self.layer_name_counter.setFixedWidth(28)
+        self.layer_name_edit.textChanged.connect(
+            lambda t: self.layer_name_counter.setText("{}/5".format(len(t))))
+        self.layer_name_btn = QPushButton("Set")
+        self.layer_name_btn.setFixedWidth(50)
+        self.layer_name_btn.clicked.connect(self._on_layer_name_set)
+        self.layer_name_edit.returnPressed.connect(self._on_layer_name_set)
+
+        layer_name_row = QHBoxLayout()
+        layer_name_row.setContentsMargins(0, 2, 0, 2)
+        layer_name_row.addWidget(QLabel("OLED name:"))
+        layer_name_row.addWidget(self.layer_name_edit)
+        layer_name_row.addWidget(self.layer_name_counter)
+        layer_name_row.addWidget(self.layer_name_btn)
+        layer_name_row.addStretch()
+        self.layer_name_widget = QWidget()
+        self.layer_name_widget.setLayout(layer_name_row)
+        self.layer_name_widget.hide()
+
         layout = QVBoxLayout()
         layout.addLayout(layout_labels_container)
+        layout.addWidget(self.layer_name_widget)
         layout.addWidget(self.container)
         layout.setAlignment(self.container, Qt.AlignHCenter)
         w = ClickableWidget()
@@ -125,6 +153,14 @@ class KeymapEditor(BasicEditor):
             self.tabbed_keycodes.recreate_keycode_buttons()
             TabbedKeycodes.tray.recreate_keycode_buttons()
             self.refresh_layer_display()
+
+            if getattr(self.keyboard, 'oled_supported', False):
+                self.layer_name_widget.show()
+                self._update_layer_name_field()
+            else:
+                self.layer_name_widget.hide()
+        else:
+            self.layer_name_widget.hide()
         self.container.setEnabled(self.valid())
 
     def valid(self):
@@ -186,7 +222,24 @@ class KeymapEditor(BasicEditor):
     def switch_layer(self, idx):
         self.container.deselect()
         self.current_layer = idx
+        self._update_layer_name_field()
         self.refresh_layer_display()
+
+    def _update_layer_name_field(self):
+        if not self.layer_name_widget.isVisible():
+            return
+        names = self.keyboard.oled_config.get('layer_names', [])
+        name = names[self.current_layer] if self.current_layer < len(names) else ''
+        self.layer_name_edit.blockSignals(True)
+        self.layer_name_edit.setText(name.rstrip('\x00').strip()[:5])
+        self.layer_name_edit.blockSignals(False)
+        self.layer_name_counter.setText("{}/5".format(len(self.layer_name_edit.text())))
+
+    def _on_layer_name_set(self):
+        if not self.keyboard or not getattr(self.keyboard, 'oled_supported', False):
+            return
+        self.keyboard.set_oled_layer_name(self.current_layer, self.layer_name_edit.text())
+        self.layer_name_changed.emit()
 
     def set_key(self, keycode):
         """ Change currently selected key to provided keycode """

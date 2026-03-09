@@ -23,9 +23,9 @@ jobs:
           
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
-          pip install "pyinstaller>=6.0" fbs "PyQt5==5.15.9" keyboard simpleeval pywin32 certifi
-          pip install "git+https://github.com/vial-kb/cython-hidapi@fa31fd46e709ac4adba80bd516b1290dd56f43e9#egg=hidapi"
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install "pyinstaller==6.10.0" fbs "PyQt5==5.15.6" keyboard simpleeval pywin32 certifi
+          python -m pip install "git+https://github.com/vial-kb/cython-hidapi@fa31fd46e709ac4adba80bd516b1290dd56f43e9#egg=hidapi"
 
       - name: Generate fbs runtime hook
         shell: bash
@@ -71,13 +71,13 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.9' # Downgraded from 3.11 for better PyQt5 compatibility
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
-          pip install "pyinstaller>=6.0" fbs "PyQt5==5.15.9" keyboard simpleeval certifi
-          pip install "git+https://github.com/vial-kb/cython-hidapi@fa31fd46e709ac4adba80bd516b1290dd56f43e9#egg=hidapi"
+          python3 -m pip install --upgrade pip setuptools wheel
+          python3 -m pip install "pyinstaller==6.10.0" fbs "PyQt5==5.15.9" keyboard simpleeval certifi
+          python3 -m pip install "git+https://github.com/vial-kb/cython-hidapi@fa31fd46e709ac4adba80bd516b1290dd56f43e9#egg=hidapi"
 
       - name: Create Icon.icns
         run: |
@@ -112,7 +112,7 @@ jobs:
 
       - name: Freeze
         run: |
-          python -m PyInstaller \
+          python3 -m PyInstaller \
             --name "Vial" --noupx --noconfirm --clean --windowed \
             --icon "src/main/icons/Icon.icns" \
             --distpath "target" \
@@ -173,10 +173,6 @@ jobs:
           body: |
             ### 🛠️ XCMKB Specialized Build (v0.7.5a)
             Custom build for XCMKB keyboards.
-            
-            **Included Assets:**
-            - Windows Portable (.zip)
-            - macOS Disk Image (.dmg)
           draft: false
           prerelease: false
         env:

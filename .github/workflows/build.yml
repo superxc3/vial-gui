@@ -22,7 +22,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install --upgrade pip setuptools wheel cython
           python -m pip install "pyinstaller==6.10.0" fbs "PyQt5==5.15.9" keyboard simpleeval pywin32 certifi
           python -m pip install "git+https://github.com/vial-kb/cython-hidapi@fa31fd46e709ac4adba80bd516b1290dd56f43e9#egg=hidapi"
 
@@ -64,7 +64,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python3 -m pip install --upgrade pip setuptools wheel
+          brew install hidapi
+          python3 -m pip install --upgrade pip setuptools wheel cython
           python3 -m pip install "pyinstaller==6.10.0" fbs "PyQt5==5.15.9" keyboard simpleeval certifi
           python3 -m pip install "git+https://github.com/vial-kb/cython-hidapi@fa31fd46e709ac4adba80bd516b1290dd56f43e9#egg=hidapi"
 
@@ -135,7 +136,7 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install --upgrade pip setuptools wheel cython
           python -m pip install "pyinstaller==6.10.0" fbs "PyQt5==5.15.9" keyboard simpleeval certifi
           python -m pip install "git+https://github.com/vial-kb/cython-hidapi@fa31fd46e709ac4adba80bd516b1290dd56f43e9#egg=hidapi"
 

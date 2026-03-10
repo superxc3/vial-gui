@@ -75,6 +75,12 @@ jobs:
         . .\venv\Scripts\activate.ps1
         pip install -r requirements.txt
 
+    - name: Install Visual C++ Redistributable
+      run: |
+        Invoke-WebRequest -Uri "https://download.microsoft.com/download/3/2/2/3224B87F-CFA0-4E70-BDA3-3DE650EFEBA5/vcredist_x64.exe" -OutFile "vcredist_x64.exe"
+        Start-Process -FilePath "vcredist_x64.exe" -ArgumentList "/install", "/quiet", "/norestart" -Wait
+        Remove-Item "vcredist_x64.exe"
+
     - name: Build
       run: |
         . .\venv\Scripts\activate.ps1

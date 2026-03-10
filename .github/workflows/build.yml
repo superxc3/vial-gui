@@ -10,199 +10,110 @@ permissions:
   contents: write
 
 jobs:
-  # ── Windows ────────────────────────────────────────────────────────────────
-  build-windows:
-    runs-on: windows-latest
+  # ── Linux ──────────────────────────────────────────────────────────────────
+  build-linux:
+    runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
+    - name: Build
+      run: ./util/linux-builder/build-in-docker.sh
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip setuptools wheel cython
-          python -m pip install "pyinstaller==6.10.0" fbs "PyQt5==5.15.9" --only-binary=PyQt5 keyboard simpleeval pywin32 certifi
-          python -m pip install "git+https://github.com/vial-kb/cython-hidapi@fa31fd46e709ac4adba80bd516b1290dd56f43e9#egg=hidapi"
-
-      - name: Freeze
-        shell: pwsh
-        run: |
-          python -m PyInstaller `
-            --name "Vial" --noupx --noconfirm --clean --windowed `
-            --contents-directory "." `
-            --icon "src/main/icons/Icon.ico" `
-            --distpath "target" `
-            --specpath "target/PyInstaller" `
-            --workpath "target/PyInstaller" `
-            --add-data "src/main/resources/base;." `
-            --add-data "src/main/icons/Icon.ico;." `
-            --paths "src/main/python" `
-            --runtime-hook ".github/hooks/fbs_hook_win.py" `
-            "src/main/python/main.py"
-
-      - name: Zip portable build
-        shell: pwsh
-        run: Compress-Archive -Path target/Vial/* -DestinationPath target/Vial-Windows.zip
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Vial-Windows
-          path: target/Vial-Windows.zip
+    - uses: actions/upload-artifact@v4
+      with:
+        name: Vial-Linux
+        path: util/linux-builder/output/Vial-x86_64.AppImage
 
   # ── macOS ──────────────────────────────────────────────────────────────────
   build-mac:
-    runs-on: macos-13
+    runs-on: macos-15
+    env:
+      PYTHON_VERSION: 3.6.8
+      MACOSX_DEPLOYMENT_TARGET: 10.9
     steps:
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
+    - name: Get Python
+      run: curl https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-macosx${MACOSX_DEPLOYMENT_TARGET}.pkg -o python.pkg
 
-      - name: Install dependencies
-        run: |
-          brew install hidapi
-          python3 -m pip install --upgrade pip setuptools wheel cython
-          python3 -m pip install "pyinstaller==6.10.0" fbs "PyQt5==5.15.9" --only-binary=PyQt5 keyboard simpleeval certifi
-          python3 -m pip install "git+https://github.com/vial-kb/cython-hidapi@fa31fd46e709ac4adba80bd516b1290dd56f43e9#egg=hidapi"
+    - name: Verify download
+      run: shasum -a 256 -c <<< '4bcd53faffc98d193ef7cdccd5668de3829c702af4db45258819a84a2cab60d0 *python.pkg'
 
-      - name: Create Icon.icns
-        run: |
-          mkdir -p /tmp/Vial.iconset
-          cp src/main/icons/base/16.png   /tmp/Vial.iconset/icon_16x16.png
-          cp src/main/icons/mac/128.png   /tmp/Vial.iconset/icon_16x16@2x.png
-          cp src/main/icons/base/16.png   /tmp/Vial.iconset/icon_32x32.png
-          cp src/main/icons/mac/128.png   /tmp/Vial.iconset/icon_32x32@2x.png
-          cp src/main/icons/mac/128.png   /tmp/Vial.iconset/icon_64x64.png
-          cp src/main/icons/mac/128.png   /tmp/Vial.iconset/icon_128x128.png
-          cp src/main/icons/mac/256.png   /tmp/Vial.iconset/icon_128x128@2x.png
-          cp src/main/icons/mac/256.png   /tmp/Vial.iconset/icon_256x256.png
-          cp src/main/icons/mac/512.png   /tmp/Vial.iconset/icon_256x256@2x.png
-          cp src/main/icons/mac/512.png   /tmp/Vial.iconset/icon_512x512.png
-          cp src/main/icons/mac/1024.png  /tmp/Vial.iconset/icon_512x512@2x.png
-          iconutil -c icns /tmp/Vial.iconset -o src/main/icons/Icon.icns
+    - name: Install Python
+      run: sudo installer -pkg python.pkg -target /
 
-      - name: Freeze
-        run: |
-          python3 -m PyInstaller \
-            --name "Vial" --noupx --noconfirm --clean --windowed \
-            --icon "src/main/icons/Icon.icns" \
-            --distpath "target" \
-            --specpath "target/PyInstaller" \
-            --workpath "target/PyInstaller" \
-            --add-data "src/main/resources/base:." \
-            --add-data "src/main/icons/Icon.icns:." \
-            --paths "src/main/python" \
-            --runtime-hook ".github/hooks/fbs_hook_mac.py" \
-            "src/main/python/main.py"
+    - name: Setup venv
+      run: |
+        python3.6 -m venv venv
+        source venv/bin/activate
+        pip install -r requirements.txt
 
-      - name: Package as DMG
-        run: |
-          brew install create-dmg
-          create-dmg \
-            --volname "Vial" \
-            --window-size 600 400 \
-            --icon-size 128 \
-            --icon "Vial.app" 150 180 \
-            --app-drop-link 450 180 \
-            "target/Vial-Mac.dmg" \
-            "target/Vial.app"
+    - name: Build
+      run: |
+        source venv/bin/activate
+        fbs freeze
+        hdiutil create -volname Vial -srcfolder "target/Vial.app" -ov -format UDZO Vial-Mac.dmg
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Vial-Mac
-          path: target/Vial-Mac.dmg
+    - uses: actions/upload-artifact@v4
+      with:
+        name: Vial-Mac
+        path: Vial-Mac.dmg
 
-  # ── Linux ──────────────────────────────────────────────────────────────────
-  build-linux:
-    runs-on: ubuntu-latest
+  # ── Windows ────────────────────────────────────────────────────────────────
+  build-windows:
+    runs-on: windows-2025
     steps:
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.6.x'
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libudev-dev libusb-1.0-0-dev libhidapi-dev \
-            libxcb-xinerama0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
-            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxkbcommon-x11-0
+    - name: Setup venv
+      run: |
+        python -m venv venv
+        . .\venv\Scripts\activate.ps1
+        pip install -r requirements.txt
 
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip setuptools wheel cython
-          python -m pip install "pyinstaller==6.10.0" fbs "PyQt5==5.15.9" --only-binary=PyQt5 keyboard simpleeval certifi
-          python -m pip install "git+https://github.com/vial-kb/cython-hidapi@fa31fd46e709ac4adba80bd516b1290dd56f43e9#egg=hidapi"
+    - name: Build
+      run: |
+        . .\venv\Scripts\activate.ps1
+        fbs freeze
+        Compress-Archive -Path "target\Vial" -DestinationPath Vial-Windows.zip
 
-      - name: Freeze
-        run: |
-          python -m PyInstaller \
-            --name "Vial" --noupx --noconfirm --clean --windowed \
-            --contents-directory "." \
-            --icon "src/main/icons/linux/256.png" \
-            --distpath "target" \
-            --specpath "target/PyInstaller" \
-            --workpath "target/PyInstaller" \
-            --add-data "src/main/resources/base:." \
-            --add-data "src/main/icons/linux/256.png:." \
-            --paths "src/main/python" \
-            --runtime-hook ".github/hooks/fbs_hook_win.py" \
-            "src/main/python/main.py"
-
-      - name: Zip portable build
-        run: zip -r target/Vial-Linux.zip target/Vial/
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Vial-Linux
-          path: target/Vial-Linux.zip
+    - uses: actions/upload-artifact@v4
+      with:
+        name: Vial-Windows
+        path: Vial-Windows.zip
 
   # ── Release (tags only) ────────────────────────────────────────────────────
   release:
-    needs: [build-windows, build-mac, build-linux]
+    needs: [build-linux, build-mac, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
-      - name: Download Windows artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: Vial-Windows
-          path: ./release-assets
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: ./release-assets
+        merge-multiple: true
 
-      - name: Download Mac artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: Vial-Mac
-          path: ./release-assets
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          release-assets/Vial-Windows.zip
+          release-assets/Vial-Mac.dmg
+          release-assets/Vial-x86_64.AppImage
+        name: XCMKB Vial-GUI ${{ github.ref_name }}
+        body: |
+          Custom Vial build for XCMKB keyboards (SoflePLUS2).
 
-      - name: Download Linux artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: Vial-Linux
-          path: ./release-assets
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            release-assets/Vial-Windows.zip
-            release-assets/Vial-Mac.dmg
-            release-assets/Vial-Linux.zip
-          name: XCMKB Vial-GUI ${{ github.ref_name }}
-          body: |
-            Custom Vial build for XCMKB keyboards (SoflePLUS2).
-
-            **Download:**
-            - Windows: `Vial-Windows.zip` — extract and run `Vial.exe`
-            - Mac: `Vial-Mac.dmg` — open and drag to Applications
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          **Download:**
+          - Windows: `Vial-Windows.zip` — extract and run `Vial.exe`
+          - Mac: `Vial-Mac.dmg` — open and drag to Applications
+          - Linux: `Vial-x86_64.AppImage` — make executable and run
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

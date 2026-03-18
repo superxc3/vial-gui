@@ -473,6 +473,10 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
                 for a in self.indicator_assignments
             ]
 
+        if getattr(self, 'trackpad_supported', False):
+            data["trackpad_settings"] = dict(self.trackpad_settings)
+            data["trackpad_layers"] = dict(self.trackpad_layers)
+
         return json.dumps(data).encode("utf-8")
 
     def restore_layout(self, data):
@@ -535,6 +539,11 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
             self.indicator_assignments = assignments
             self.set_vialrgb_indicator_leds(assignments)
             self.set_vialrgb_indicator_colors(assignments)
+
+        if getattr(self, 'trackpad_supported', False) and "trackpad_settings" in data:
+            self.set_trackpad_settings(data["trackpad_settings"])
+        if getattr(self, 'trackpad_supported', False) and "trackpad_layers" in data:
+            self.set_trackpad_layers(data["trackpad_layers"])
 
     def reset(self):
         self.usb_send(self.dev, struct.pack("B", 0xB))

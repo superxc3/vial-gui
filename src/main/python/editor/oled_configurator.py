@@ -31,7 +31,7 @@ WIDGETS = [
     (0x10, "Gesture Bitmap",  2,  (60,  60, 180)),
     (0x20, "Layer Number",    4,  (100, 20, 140)),
     (0x30, "Calcifer Anim",   5,  (180, 70,  10)),
-    (0x31, "Space Ship",      4,  (10,  60, 160)),
+    (0x31, "Space Ship",     16,  (10,  60, 160)),
 ]
 
 _WID_META  = {wid: (name, rows, color) for wid, name, rows, color in WIDGETS}

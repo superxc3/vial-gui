@@ -80,6 +80,8 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
         self.oled_config = {
             'row1': 'SOFLE',
             'layer_names': ['L{}'.format(i) for i in range(10)],
+            'screen_a': [0] * 16,   # widget slot IDs for master OLED
+            'screen_b': [0] * 16,   # widget slot IDs for slave OLED
         }
         self.trackpad_settings = {
             'cursor_dpi': 3, 'scroll_speed': 4,
@@ -462,6 +464,8 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
             data["oled_config"] = {
                 "row1": self.oled_config.get("row1", ""),
                 "layer_names": list(self.oled_config.get("layer_names", [])),
+                "screen_a": list(self.oled_config.get("screen_a", [0] * 16)),
+                "screen_b": list(self.oled_config.get("screen_b", [0] * 16)),
             }
 
         if getattr(self, 'vialrgb_direct_supported', False) and self.vialrgb_direct_colors:
@@ -518,6 +522,10 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
                 oled.get("row1", ""),
                 oled.get("layer_names", []),
             )
+            if "screen_a" in oled:
+                self.set_oled_screen_slots(False, oled["screen_a"])
+            if "screen_b" in oled:
+                self.set_oled_screen_slots(True, oled["screen_b"])
 
         if getattr(self, 'vialrgb_direct_supported', False) and "vialrgb_direct_colors" in data:
             saved = data["vialrgb_direct_colors"]
@@ -815,7 +823,29 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
                                  retries=20)
             names.append(data[3:8].rstrip(b'\x00').decode('ascii', errors='replace'))
         self.oled_config['layer_names'] = names
+        # Fetch widget slots (items 0xF0-0xF7)
+        self.reload_oled_widgets()
         self.oled_supported = True
+
+    def reload_oled_widgets(self):
+        """Fetch screen_a and screen_b widget slot arrays from keyboard (items 0xF0-0xF7)."""
+        from protocol.constants import VIALRGB_GET_OLED_CONFIG
+        screen_a = [0] * 16
+        screen_b = [0] * 16
+        for item in range(0xF0, 0xF8):
+            data = self.usb_send(self.dev,
+                                 struct.pack("BBB", CMD_VIA_LIGHTING_GET_VALUE,
+                                             VIALRGB_GET_OLED_CONFIG, item),
+                                 retries=20)
+            chunk = data[3:8]  # up to 5 bytes
+            is_b = (item >= 0xF4)
+            idx = ((item - 0xF4) if is_b else (item - 0xF0)) * 5
+            target = screen_b if is_b else screen_a
+            length = min(5, 16 - idx)
+            for j in range(length):
+                target[idx + j] = chunk[j] if j < len(chunk) else 0
+        self.oled_config['screen_a'] = screen_a
+        self.oled_config['screen_b'] = screen_b
 
     def set_oled_config(self, row1, layer_names):
         """Push OLED label config to keyboard (sub-ID 0x52), one item per packet."""
@@ -855,3 +885,24 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
             names.append('')
         names[layer_idx] = name[:5]
         self.oled_config['layer_names'] = names
+
+    def set_oled_screen_slots(self, is_b, slots):
+        """Push 16 widget slot IDs for screen_a (is_b=False, items 0xF0-0xF3) or
+        screen_b (is_b=True, items 0xF4-0xF7) to the keyboard."""
+        from protocol.constants import VIALRGB_SET_OLED_CONFIG
+        base_item = 0xF4 if is_b else 0xF0
+        slots = list(slots)[:16]
+        while len(slots) < 16:
+            slots.append(0)
+        # Send in 4 chunks of up to 5 bytes each (last chunk = 1 byte)
+        for chunk_idx in range(4):
+            item = base_item + chunk_idx
+            start = chunk_idx * 5
+            end = min(start + 5, 16)
+            chunk = bytes(slots[start:end]).ljust(5, b'\x00')
+            self.usb_send(self.dev,
+                          struct.pack("BBB5s", CMD_VIA_LIGHTING_SET_VALUE,
+                                      VIALRGB_SET_OLED_CONFIG, item, chunk),
+                          retries=20)
+        key = 'screen_b' if is_b else 'screen_a'
+        self.oled_config[key] = slots

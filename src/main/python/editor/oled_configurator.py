@@ -249,21 +249,19 @@ class OledConfigurator(BasicEditor):
 
         # ── Screen A tab (master OLED) ─────────────────────────────────────
         self._screen_a = _ScreenPanel("Master (Left)", self._on_apply_screen_a)
-        screen_a_scroll = _make_scrollable(self._screen_a.layout())
-        # wrap in a page so we can add the scroll
-        screen_a_page = QWidget()
-        sa_layout = QVBoxLayout(screen_a_page)
-        sa_layout.setContentsMargins(0, 0, 0, 0)
-        sa_layout.addWidget(self._screen_a)
-        tabs_widget.addTab(screen_a_page, "Screen A (Master)")
+        sa_scroll = QScrollArea()
+        sa_scroll.setFrameShape(QFrame.NoFrame)
+        sa_scroll.setWidgetResizable(True)
+        sa_scroll.setWidget(self._screen_a)
+        tabs_widget.addTab(sa_scroll, "Screen A (Master)")
 
         # ── Screen B tab (slave OLED) ──────────────────────────────────────
         self._screen_b = _ScreenPanel("Slave (Right)", self._on_apply_screen_b)
-        screen_b_page = QWidget()
-        sb_layout = QVBoxLayout(screen_b_page)
-        sb_layout.setContentsMargins(0, 0, 0, 0)
-        sb_layout.addWidget(self._screen_b)
-        tabs_widget.addTab(screen_b_page, "Screen B (Slave)")
+        sb_scroll = QScrollArea()
+        sb_scroll.setFrameShape(QFrame.NoFrame)
+        sb_scroll.setWidgetResizable(True)
+        sb_scroll.setWidget(self._screen_b)
+        tabs_widget.addTab(sb_scroll, "Screen B (Slave)")
 
         self.addWidget(tabs_widget)
 

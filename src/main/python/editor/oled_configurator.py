@@ -80,7 +80,8 @@ class OledConfigurator(BasicEditor):
             "Text shown on the left OLED (master side).\n"
             "Maximum 5 characters — the OLED display width limit.\n"
             "Layer names are set per-layer in the Keymap tab.\n"
-            "Changes take effect immediately after clicking Apply."
+            "Changes take effect immediately after clicking Apply.\n"
+            "OLED sleep time is synced with the Lighting (RGB) sleep time — kindly adjust it on the Lighting tab."
         )
         note.setWordWrap(True)
         inner.addWidget(note)

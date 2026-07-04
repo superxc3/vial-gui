@@ -17,6 +17,7 @@ from protocol.constants import CMD_VIA_GET_PROTOCOL_VERSION, CMD_VIA_GET_KEYBOAR
     VIALRGB_GET_INDICATOR_LEDS, VIALRGB_GET_INDICATOR_COLORS, VIALRGB_SET_INDICATOR_LEDS, VIALRGB_SET_INDICATOR_COLORS, \
     VIALRGB_GET_TRACKPAD_SETTINGS, VIALRGB_SET_TRACKPAD_SETTINGS, \
     VIALRGB_GET_TRACKPAD_LAYERS, VIALRGB_SET_TRACKPAD_LAYERS, \
+    VIALRGB_GET_POWER_SETTINGS, VIALRGB_SET_POWER_SETTINGS, \
     CMD_VIAL_GET_KEYBOARD_ID, CMD_VIAL_GET_SIZE, CMD_VIAL_GET_DEFINITION, \
     CMD_VIAL_GET_ENCODER, CMD_VIAL_SET_ENCODER, CMD_VIAL_GET_UNLOCK_STATUS, CMD_VIAL_UNLOCK_START, CMD_VIAL_UNLOCK_POLL, \
     CMD_VIAL_LOCK, CMD_VIAL_QMK_SETTINGS_QUERY, CMD_VIAL_QMK_SETTINGS_GET, CMD_VIAL_QMK_SETTINGS_SET, \
@@ -69,6 +70,7 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
         # vialrgb
         self.rgb_mode = self.rgb_speed = self.rgb_version = self.rgb_maximum_brightness = -1
         self.rgb_hsv = (0, 0, 0)
+        self.sleep_timeout_min = 1   # shared OLED+RGB sleep timeout (minutes)
         self.rgb_supported_effects = set()
         self.vialrgb_direct_supported = False
         self.vialrgb_num_leds = 0
@@ -337,6 +339,12 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
             self.rgb_mode = int.from_bytes(data[0:2], byteorder="little")
             self.rgb_speed = data[2]
             self.rgb_hsv = (data[3], data[4], data[5])
+            try:
+                pdata = self.usb_send(self.dev, struct.pack("BB", CMD_VIA_LIGHTING_GET_VALUE,
+                                                            VIALRGB_GET_POWER_SETTINGS), retries=20)[2:]
+                self.sleep_timeout_min = max(1, min(30, pdata[0] if len(pdata) else 1))
+            except Exception:
+                pass
 
     def reload_settings(self):
         self.settings = dict()
@@ -646,6 +654,13 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
     def set_vialrgb_color(self, h, s, v):
         self.rgb_hsv = (h, s, v)
         self._vialrgb_set_mode()
+
+    def set_power_settings(self, minutes):
+        """Set the shared OLED+RGB sleep timeout (whole minutes, 1-30)."""
+        minutes = max(1, min(30, int(minutes)))
+        self.sleep_timeout_min = minutes
+        self.usb_send(self.dev, struct.pack("BBB", CMD_VIA_LIGHTING_SET_VALUE,
+                                            VIALRGB_SET_POWER_SETTINGS, minutes), retries=20)
 
     def reload_vialrgb_direct_leds(self):
         """Fetch LED count and per-LED matrix positions from the keyboard."""

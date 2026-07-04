@@ -6,7 +6,7 @@ from PyQt5 import QtCore
 from PyQt5.QtCore import pyqtSignal, QObject, Qt, QStandardPaths
 from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import QWidget, QPushButton, QHBoxLayout, QVBoxLayout, QSizePolicy, QGridLayout, QLabel, \
-    QSlider, QComboBox, QColorDialog, QCheckBox, QScrollArea, QApplication, QButtonGroup
+    QSlider, QComboBox, QColorDialog, QCheckBox, QScrollArea, QApplication, QButtonGroup, QSpinBox
 
 from editor.basic_editor import BasicEditor
 from widgets.clickable_label import ClickableLabel
@@ -330,8 +330,20 @@ class VialRGBHandler(BasicHandler):
         self.rgb_speed.valueChanged.connect(self.on_rgb_speed_changed)
         container.addWidget(self.rgb_speed, row + 3, 1)
 
+        self.lbl_rgb_sleep = QLabel(tr("RGBConfigurator", "Sleep Time"))
+        container.addWidget(self.lbl_rgb_sleep, row + 4, 0)
+        self.rgb_sleep = QSpinBox()
+        self.rgb_sleep.setMinimum(1)
+        self.rgb_sleep.setMaximum(30)
+        self.rgb_sleep.setSuffix(tr("RGBConfigurator", " min"))
+        self.rgb_sleep.setToolTip(tr("RGBConfigurator",
+            "Minutes of inactivity before the OLED and RGB sleep (shared for both)."))
+        self.rgb_sleep.valueChanged.connect(self.on_rgb_sleep_changed)
+        container.addWidget(self.rgb_sleep, row + 4, 1)
+
         self.widgets = [self.lbl_rgb_effect, self.rgb_effect, self.lbl_rgb_brightness, self.rgb_brightness,
-                        self.lbl_rgb_color, self.rgb_color, self.lbl_rgb_speed, self.rgb_speed]
+                        self.lbl_rgb_color, self.rgb_color, self.lbl_rgb_speed, self.rgb_speed,
+                        self.lbl_rgb_sleep, self.rgb_sleep]
 
         self.effects = []
 
@@ -340,6 +352,9 @@ class VialRGBHandler(BasicHandler):
 
     def on_rgb_speed_changed(self, value):
         self.keyboard.set_vialrgb_speed(value)
+
+    def on_rgb_sleep_changed(self, value):
+        self.keyboard.set_power_settings(value)
 
     def on_rgb_effect_changed(self, index):
         vialrgb_id = self.effects[index].idx
@@ -391,6 +406,7 @@ class VialRGBHandler(BasicHandler):
         self.rgb_brightness.setMaximum(self.keyboard.rgb_maximum_brightness)
         self.rgb_brightness.setValue(self.keyboard.rgb_hsv[2])
         self.rgb_speed.setValue(self.keyboard.rgb_speed)
+        self.rgb_sleep.setValue(getattr(self.keyboard, "sleep_timeout_min", 1))
         self.rgb_color.setStyleSheet("QWidget { background-color: %s}" % self.current_color().name())
         self.mode_changed.emit(self.keyboard.rgb_mode)
 
@@ -414,7 +430,10 @@ class PerKeyRGBWidget(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         self.setLayout(outer)
 
-        lbl = QLabel(tr("RGBConfigurator", "Click to select a key. Ctrl+click to add/remove from selection."))
+        lbl = QLabel(tr("RGBConfigurator",
+            "Click to select a key. Windows: Ctrl+Click, macOS: Cmd+Click to add/remove from selection.\n"
+            "Remember to click Save (bottom-right) to keep your colours."))
+        lbl.setWordWrap(True)
         lbl.setAlignment(Qt.AlignCenter)
         outer.addWidget(lbl)
 
@@ -670,6 +689,13 @@ class IndicatorWidget(QWidget):
         outer = QVBoxLayout()
         outer.setContentsMargins(0, 0, 0, 0)
         self.setLayout(outer)
+
+        help_lbl = QLabel(tr("RGBConfigurator",
+            "Click to select a key. Windows: Ctrl+Click, macOS: Cmd+Click to add/remove from selection.\n"
+            "Remember to click 'Apply to Keyboard', then 'Save' (bottom-right), for changes to take effect and persist."))
+        help_lbl.setWordWrap(True)
+        help_lbl.setAlignment(Qt.AlignCenter)
+        outer.addWidget(help_lbl)
 
         # --- Role selector row ---
         role_row = QHBoxLayout()

@@ -450,7 +450,9 @@ class MainWindow(QMainWindow):
         title = "About Vial"
         text = 'Vial {}<br><br>Python {}<br>Qt {}<br><br>' \
                'Licensed under the terms of the<br>GNU General Public License (version 2 or later)<br><br>' \
-               '<a href="https://get.vial.today/">https://get.vial.today/</a>' \
+               '<a href="https://get.vial.today/">https://get.vial.today/</a><br><br>' \
+               'Firmware Changelog:<br>' \
+               '<a href="https://xcmkb-docs.gitbook.io/doc/firmware-changelog">https://xcmkb-docs.gitbook.io/doc/firmware-changelog</a>' \
                .format(qApp.applicationVersion(),
                        platform.python_version(), QT_VERSION_STR)
 

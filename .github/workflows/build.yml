@@ -121,5 +121,6 @@ jobs:
           - Linux: `Vial-x86_64.AppImage` — make executable and run
         draft: false
         prerelease: false
+        generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

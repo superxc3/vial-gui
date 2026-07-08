@@ -1037,7 +1037,12 @@ class RGBConfigurator(BasicEditor):
 
         if keyboard is not None and keyboard.lighting_vialrgb:
             self.indicator_widget.set_keyboard(keyboard)
-            self.indicator_widget.restore_indicator_config(keyboard.keyboard_id)
+            # Firmware is the source of truth: reload_vialrgb_indicator_config() has
+            # already populated indicator_assignments from the keyboard's EEPROM.
+            # Only fall back to the on-disk JSON copy when the firmware can't report
+            # its indicator config, otherwise we'd show/apply a stale retained value.
+            if not getattr(keyboard, 'indicator_supported', False):
+                self.indicator_widget.restore_indicator_config(keyboard.keyboard_id)
             self.indicator_widget.show()
         else:
             self.indicator_widget.set_keyboard(None)

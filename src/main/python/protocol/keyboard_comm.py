@@ -15,6 +15,7 @@ from protocol.constants import CMD_VIA_GET_PROTOCOL_VERSION, CMD_VIA_GET_KEYBOAR
     QMK_RGBLIGHT_EFFECT, QMK_RGBLIGHT_EFFECT_SPEED, QMK_RGBLIGHT_COLOR, VIALRGB_GET_INFO, VIALRGB_GET_MODE, \
     VIALRGB_GET_SUPPORTED, VIALRGB_SET_MODE, VIALRGB_GET_NUMBER_LEDS, VIALRGB_GET_LED_INFO, VIALRGB_DIRECT_FASTSET, \
     VIALRGB_GET_INDICATOR_LEDS, VIALRGB_GET_INDICATOR_COLORS, VIALRGB_SET_INDICATOR_LEDS, VIALRGB_SET_INDICATOR_COLORS, \
+    VIALRGB_GET_DIRECT_COLORS, \
     VIALRGB_GET_TRACKPAD_SETTINGS, VIALRGB_SET_TRACKPAD_SETTINGS, \
     VIALRGB_GET_TRACKPAD_LAYERS, VIALRGB_SET_TRACKPAD_LAYERS, \
     VIALRGB_GET_POWER_SETTINGS, VIALRGB_SET_POWER_SETTINGS, \
@@ -472,6 +473,11 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
                 "layer_names": list(self.oled_config.get("layer_names", [])),
             }
 
+        if self.lighting_vialrgb:
+            data["rgb_mode"] = self.rgb_mode
+            data["rgb_speed"] = self.rgb_speed
+            data["rgb_hsv"] = list(self.rgb_hsv)
+
         if getattr(self, 'vialrgb_direct_supported', False) and self.vialrgb_direct_colors:
             data["vialrgb_direct_colors"] = [list(c) for c in self.vialrgb_direct_colors]
 
@@ -534,6 +540,14 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
                 self.vialrgb_direct_colors = colors
                 self.set_vialrgb_direct_fastset(0, colors)
 
+        if self.lighting_vialrgb and "rgb_mode" in data:
+            self.rgb_mode = data["rgb_mode"]
+            self.rgb_speed = data.get("rgb_speed", self.rgb_speed)
+            hsv = data.get("rgb_hsv")
+            if hsv and len(hsv) == 3:
+                self.rgb_hsv = tuple(hsv)
+            self._vialrgb_set_mode()
+
         if getattr(self, 'indicator_supported', False) and "indicator_assignments" in data:
             saved = data["indicator_assignments"]
             assignments = list(self.indicator_assignments)
@@ -552,6 +566,13 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
             self.set_trackpad_settings(data["trackpad_settings"])
         if getattr(self, 'trackpad_supported', False) and "trackpad_layers" in data:
             self.set_trackpad_layers(data["trackpad_layers"])
+
+        # Persist the restored lighting to EEPROM (mode via eeconfig flush,
+        # per-key colors and indicators via vialrgb_save_user) so it survives
+        # a reboot without the user pressing Save in the Lighting tab.
+        if self.lighting_vialrgb and ("rgb_mode" in data or "vialrgb_direct_colors" in data
+                                      or "indicator_assignments" in data):
+            self.save_rgb()
 
     def reset(self):
         self.usb_send(self.dev, struct.pack("B", 0xB))
@@ -678,6 +699,27 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
             if row != 0xFF and col != 0xFF:
                 self.vialrgb_led_map[(row, col)] = led_idx
         self.vialrgb_direct_supported = True
+        self.reload_vialrgb_direct_colors()
+
+    def reload_vialrgb_direct_colors(self):
+        """Read back the current per-key Customise colors from the keyboard (0x47).
+
+        Firmware without this command echoes the request back, which parses as
+        count=0 on the first packet and leaves the all-black defaults in place.
+        """
+        led = 0
+        while led < self.vialrgb_num_leds:
+            data = self.usb_send(self.dev, struct.pack("<BBH", CMD_VIA_LIGHTING_GET_VALUE,
+                                                       VIALRGB_GET_DIRECT_COLORS, led), retries=20)[2:]
+            count = data[0]
+            if count == 0 or len(data) < 1 + count * 3:
+                break
+            for x in range(count):
+                if led + x < self.vialrgb_num_leds:
+                    self.vialrgb_direct_colors[led + x] = (data[1 + x * 3],
+                                                           data[2 + x * 3],
+                                                           data[3 + x * 3])
+            led += count
 
     def set_vialrgb_direct_fastset(self, first_idx, hsv_list):
         """Send per-LED HSV colors to the keyboard. hsv_list is [(H, S, V), ...]."""

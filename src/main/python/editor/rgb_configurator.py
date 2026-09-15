@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import QWidget, QPushButton, QHBoxLayout, QVBoxLayout, QSiz
 from editor.basic_editor import BasicEditor
 from widgets.clickable_label import ClickableLabel
 from widgets.keyboard_widget import KeyboardWidget
-from util import tr
+from util import tr, persist_app_data
 from vial_device import VialKeyboard
 
 
@@ -625,6 +625,7 @@ class PerKeyRGBWidget(QWidget):
             existing["colors"] = colors
             with open(path, "w") as f:
                 json.dump(existing, f)
+            persist_app_data()
         except OSError:
             pass
 
@@ -903,6 +904,7 @@ class IndicatorWidget(QWidget):
             ]
             with open(path, "w") as f:
                 json.dump(existing, f)
+            persist_app_data()
         except OSError:
             pass
 

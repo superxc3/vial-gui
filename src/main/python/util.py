@@ -154,6 +154,16 @@ def init_logger():
     logging.getLogger().addHandler(handler)
 
 
+def persist_app_data():
+    """ On the web build the app data dir is an in-memory filesystem mirrored to browser storage
+    only when asked; call this after writing a file there so it survives a page reload. """
+    if sys.platform == "emscripten":
+        import vialglue
+        # older vial-web bridges do not have it; then the data just does not persist
+        if hasattr(vialglue, "fs_sync"):
+            vialglue.fs_sync()
+
+
 def make_scrollable(layout):
     w = QWidget()
     w.setLayout(layout)

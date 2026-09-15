@@ -448,9 +448,13 @@ class MainWindow(QMainWindow):
 
     def about_vial(self):
         title = "About Vial"
-        text = 'Vial {}<br><br>Python {}<br>Qt {}<br><br>' \
-               'Licensed under the terms of the<br>GNU General Public License (version 2 or later)<br><br>' \
-               '<a href="https://get.vial.today/">https://get.vial.today/</a><br><br>' \
+        text = 'Vial {} (XCMKB build)<br><br>Python {}<br>Qt {}<br><br>' \
+               'This is a customised build of Vial for XCMKB keyboards. It is not affiliated with<br>' \
+               'or supported by the Vial project; please report issues with this build to XCMKB.<br><br>' \
+               'Based on Vial (<a href="https://get.vial.today/">https://get.vial.today/</a>), ' \
+               'licensed under the terms of the<br>GNU General Public License (version 2 or later).<br>' \
+               'Source code: <a href="https://github.com/superxc3/vial-gui/tree/xcmkb">vial-gui</a> &middot; ' \
+               '<a href="https://github.com/superxc3/vial-web">vial-web</a><br><br>' \
                'Firmware Changelog:<br>' \
                '<a href="https://xcmkb-docs.gitbook.io/doc/firmware-changelog">https://xcmkb-docs.gitbook.io/doc/firmware-changelog</a>' \
                .format(qApp.applicationVersion(),

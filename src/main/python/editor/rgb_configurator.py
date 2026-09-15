@@ -579,23 +579,29 @@ class PerKeyRGBWidget(QWidget):
         h, s, v = self.keyboard.vialrgb_direct_colors[led]
         init_color = QColor.fromHsvF(h / 255.0, s / 255.0, v / 255.0) if (h or s or v) else QColor(Qt.white)
 
-        dlg = QColorDialog(init_color)
-        dlg.setModal(True)
-        if dlg.exec_():
-            color = dlg.selectedColor()
-            if color.isValid():
-                hf, sf, vf, _ = color.getHsvF()
-                if hf < 0:
-                    hf = 0
-                new_h, new_s, new_v = int(255 * hf), int(255 * sf), int(255 * vf)
-                # Update in-memory colors for all selected keys
-                for pos in self._selected_positions:
-                    sel_led = self.keyboard.vialrgb_led_map[pos]
-                    self.keyboard.vialrgb_direct_colors[sel_led] = (new_h, new_s, new_v)
-                # Send the full updated array to firmware in one batched call
-                n = self.keyboard.vialrgb_num_leds
-                self.keyboard.set_vialrgb_direct_fastset(0, self.keyboard.vialrgb_direct_colors[:n])
-                self.refresh_key_colors()
+        # Non-blocking like on_underglow_color: exec_() needs a nested event loop, which the
+        # web build does not have
+        self.dlg_color = QColorDialog(init_color)
+        self.dlg_color.setModal(True)
+        self.dlg_color.finished.connect(self.on_pick_color_finished)
+        self.dlg_color.show()
+
+    def on_pick_color_finished(self):
+        color = self.dlg_color.selectedColor()
+        if not color.isValid() or self.keyboard is None or not self._selected_positions:
+            return
+        hf, sf, vf, _ = color.getHsvF()
+        if hf < 0:
+            hf = 0
+        new_h, new_s, new_v = int(255 * hf), int(255 * sf), int(255 * vf)
+        # Update in-memory colors for all selected keys
+        for pos in self._selected_positions:
+            sel_led = self.keyboard.vialrgb_led_map[pos]
+            self.keyboard.vialrgb_direct_colors[sel_led] = (new_h, new_s, new_v)
+        # Send the full updated array to firmware in one batched call
+        n = self.keyboard.vialrgb_num_leds
+        self.keyboard.set_vialrgb_direct_fastset(0, self.keyboard.vialrgb_direct_colors[:n])
+        self.refresh_key_colors()
 
     def on_reset_key(self):
         if not self._selected_positions or self.keyboard is None:
@@ -865,13 +871,19 @@ class IndicatorWidget(QWidget):
 
     def on_color_pick(self):
         a = self._assignments[self._active_role]
-        dlg = QColorDialog(QColor(a['r'], a['g'], a['b']))
-        dlg.setModal(True)
-        if dlg.exec_():
-            color = dlg.selectedColor()
-            if color.isValid():
-                a['r'], a['g'], a['b'] = color.red(), color.green(), color.blue()
-                self._refresh_display()
+        # Non-blocking (see PerKeyRGBWidget.on_pick_color)
+        self.dlg_color = QColorDialog(QColor(a['r'], a['g'], a['b']))
+        self.dlg_color.setModal(True)
+        self.dlg_color.finished.connect(self.on_color_pick_finished)
+        self.dlg_color.show()
+
+    def on_color_pick_finished(self):
+        color = self.dlg_color.selectedColor()
+        if not color.isValid():
+            return
+        a = self._assignments[self._active_role]
+        a['r'], a['g'], a['b'] = color.red(), color.green(), color.blue()
+        self._refresh_display()
 
     def on_clear_role(self):
         self._assignments[self._active_role]['leds'] = []

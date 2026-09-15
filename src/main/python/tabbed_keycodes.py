@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import QTabWidget, QWidget, QScrollArea, QApplication, QVBoxLayout
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer
+from PyQt5.QtWidgets import QTabWidget, QWidget, QScrollArea, QApplication, QVBoxLayout, QLineEdit, QLabel
 from PyQt5.QtGui import QPalette
 
 from constants import KEYCODE_BTN_RATIO
@@ -141,6 +141,181 @@ class SimpleTab(Tab):
         super().__init__(parent, label, [(None, keycodes)])
 
 
+class SearchTab(QWidget):
+    """ Finds keycodes across all the other tabs by label, QMK ID, alias or description,
+    grouped by the tab they live in """
+
+    keycode_changed = pyqtSignal(str)
+
+    MAX_RESULTS = 80
+    # wait for typing to pause before rebuilding the result buttons
+    DEBOUNCE_MS = 150
+
+    def __init__(self, parent, tabs):
+        super().__init__(parent)
+
+        self.label = "Search"
+        self.tabs = tabs
+        self.keycode_filter = keycode_filter_any
+        self.buttons = []
+        self.groups = []
+
+        self.search = QLineEdit()
+        self.search.setPlaceholderText(tr("TabbedKeycodes", "Type to find a keycode by name, QMK ID or description"))
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self.on_text_changed)
+
+        self.hint = QLabel()
+        self.hint.setWordWrap(True)
+
+        self.timer = QTimer(self)
+        self.timer.setSingleShot(True)
+        self.timer.setInterval(self.DEBOUNCE_MS)
+        self.timer.timeout.connect(self.refresh)
+
+        self.results_layout = QVBoxLayout()
+        self.results_layout.setContentsMargins(0, 0, 0, 0)
+        results = QWidget()
+        results_outer = QVBoxLayout(results)
+        results_outer.setContentsMargins(0, 0, 0, 0)
+        results_outer.addLayout(self.results_layout)
+        results_outer.addStretch()
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setWidget(results)
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.search)
+        layout.addWidget(self.hint)
+        layout.addWidget(scroll)
+        self.setLayout(layout)
+
+        self.refresh()
+
+    def on_text_changed(self):
+        self.timer.start()
+
+    def recreate_buttons(self, keycode_filter):
+        # keyboard or filter changed: the dynamic keycodes (layers, macros...) may have changed too
+        self.keycode_filter = keycode_filter
+        self.refresh()
+
+    def relabel_buttons(self):
+        KeycodeDisplay.relabel_buttons(self.buttons)
+
+    def has_buttons(self):
+        return True
+
+    def focus_search(self):
+        self.search.setFocus()
+        self.search.selectAll()
+
+    def candidates(self):
+        """ Every keycode shown in the other tabs, with the tab it belongs to, without duplicates """
+        seen = set()
+        for tab in self.tabs:
+            for alt in tab.alternatives:
+                for keycode in alt.keycodes:
+                    if keycode.qmk_id in seen or keycode.hidden or not self.keycode_filter(keycode.qmk_id):
+                        continue
+                    seen.add(keycode.qmk_id)
+                    yield tab.label, keycode
+
+    @staticmethod
+    def match_rank(keycode, query):
+        """ Lower is better. 0: the label or QMK ID is the query, 1: starts with it, 2: contains it,
+        3: an alias contains it, 4: every word appears somewhere in label/ID/aliases/description;
+        None: no match """
+        label = keycode.label.replace("\n", " ").lower()
+        qmk_id = keycode.qmk_id.lower()
+        short_id = qmk_id[3:] if qmk_id.startswith("kc_") else qmk_id
+        if query in (label, qmk_id, short_id):
+            return 0
+        if label.startswith(query) or short_id.startswith(query):
+            return 1
+        if query in label or query in qmk_id:
+            return 2
+        aliases = [a.lower() for a in keycode.alias]
+        if any(query in a for a in aliases):
+            return 3
+        haystack = " ".join([label, qmk_id, keycode.tooltip.lower() if keycode.tooltip else ""] + aliases)
+        if all(word in haystack for word in query.split()):
+            return 4
+        return None
+
+    def refresh(self):
+        for btn in self.buttons:
+            btn.hide()
+            btn.deleteLater()
+        for group in self.groups:
+            group.hide()
+            group.deleteLater()
+        self.buttons = []
+        self.groups = []
+
+        query = " ".join(self.search.text().lower().split())
+        if not query:
+            self.hint.setText(tr("TabbedKeycodes", "Results appear here, grouped by the tab the keycode belongs to."))
+            return
+
+        # per tab, in tab order; within a tab best matches first, otherwise original order
+        matches = {}
+        total = 0
+        for tab_label, keycode in self.candidates():
+            rank = self.match_rank(keycode, query)
+            if rank is None:
+                continue
+            matches.setdefault(tab_label, []).append((rank, keycode))
+            total += 1
+
+        if total == 0:
+            self.hint.setText(tr("TabbedKeycodes", "No keycode matches \"{}\".").format(self.search.text()))
+            return
+        if total > self.MAX_RESULTS:
+            self.hint.setText(tr("TabbedKeycodes", "{} matches, showing the first {}. Type more to narrow it down.")
+                              .format(total, self.MAX_RESULTS))
+        else:
+            self.hint.setText(tr("TabbedKeycodes", "{} matches").format(total))
+
+        shown = 0
+        for tab_label, found in matches.items():
+            found.sort(key=lambda entry: entry[0])
+            group = QWidget()
+            group_layout = QVBoxLayout(group)
+            group_layout.setContentsMargins(0, 0, 0, 0)
+            group_layout.addWidget(QLabel("<b>{}</b>".format(tr("TabbedKeycodes", tab_label))))
+            flow = FlowLayout()
+            for rank, keycode in found:
+                if shown >= self.MAX_RESULTS:
+                    break
+                btn = SquareButton()
+                btn.setRelSize(KEYCODE_BTN_RATIO)
+                btn.setToolTip(self.tooltip(keycode))
+                btn.clicked.connect(lambda st, k=keycode: self.keycode_changed.emit(k.qmk_id))
+                btn.keycode = keycode
+                flow.addWidget(btn)
+                self.buttons.append(btn)
+                shown += 1
+            group_layout.addLayout(flow)
+            self.results_layout.addWidget(group)
+            self.groups.append(group)
+            if shown >= self.MAX_RESULTS:
+                break
+
+        self.relabel_buttons()
+
+    @staticmethod
+    def tooltip(keycode):
+        tooltip = Keycode.tooltip(keycode.qmk_id)
+        aliases = [a for a in keycode.alias if a != keycode.qmk_id]
+        if aliases:
+            tooltip = "{}\n{}: {}".format(tooltip, tr("TabbedKeycodes", "Also known as"), ", ".join(aliases))
+        return tooltip
+
+
 def keycode_filter_any(kc):
     return True
 
@@ -184,12 +359,19 @@ class FilteredTabbedKeycodes(QTabWidget):
             SimpleTab(self, "User", KEYCODES_USER),
             SimpleTab(self, "Macro", KEYCODES_MACRO),
         ]
+        self.tabs.insert(0, SearchTab(self, list(self.tabs)))
 
         for tab in self.tabs:
             tab.keycode_changed.connect(self.on_keycode_changed)
 
+        self.currentChanged.connect(self.on_current_changed)
         self.recreate_keycode_buttons()
         KeycodeDisplay.notify_keymap_override(self)
+
+    def on_current_changed(self, index):
+        widget = self.widget(index)
+        if isinstance(widget, SearchTab):
+            widget.focus_search()
 
     def on_keycode_changed(self, code):
         if code == "Any":
@@ -208,6 +390,13 @@ class FilteredTabbedKeycodes(QTabWidget):
                 self.addTab(tab, tr("TabbedKeycodes", tab.label))
                 if tab.label == prev_tab:
                     self.setCurrentIndex(self.count() - 1)
+
+        # Search sits first for discoverability, but start on Basic like before
+        if not prev_tab:
+            for index in range(self.count()):
+                if self.widget(index).label == "Basic":
+                    self.setCurrentIndex(index)
+                    break
 
     def on_keymap_override(self):
         for tab in self.tabs:

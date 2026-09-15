@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
-from PyQt5.QtWidgets import QTabWidget, QWidget, QScrollArea, QApplication, QVBoxLayout, QLineEdit, QLabel
+from PyQt5.QtWidgets import QTabWidget, QWidget, QScrollArea, QApplication, QVBoxLayout, QHBoxLayout, QLineEdit, \
+    QLabel
 from PyQt5.QtGui import QPalette
 
 from constants import KEYCODE_BTN_RATIO
@@ -161,9 +162,13 @@ class SearchTab(QWidget):
         self.groups = []
 
         self.search = QLineEdit()
-        self.search.setPlaceholderText(tr("TabbedKeycodes", "Type to find a keycode by name, QMK ID or description"))
+        self.search.setPlaceholderText(tr("TabbedKeycodes", "Search keycodes..."))
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.on_text_changed)
+        # a quarter of the width is plenty and keeps the clear button close to the text
+        search_row = QHBoxLayout()
+        search_row.addWidget(self.search, 1)
+        search_row.addStretch(3)
 
         self.hint = QLabel()
         self.hint.setWordWrap(True)
@@ -188,7 +193,7 @@ class SearchTab(QWidget):
 
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.search)
+        layout.addLayout(search_row)
         layout.addWidget(self.hint)
         layout.addWidget(scroll)
         self.setLayout(layout)
@@ -258,7 +263,9 @@ class SearchTab(QWidget):
 
         query = " ".join(self.search.text().lower().split())
         if not query:
-            self.hint.setText(tr("TabbedKeycodes", "Results appear here, grouped by the tab the keycode belongs to."))
+            self.hint.setText(tr("TabbedKeycodes", "Type a key name, QMK ID or description, e.g. \"sleep\", "
+                                                   "\"eeh\" or \"reset\". Results are grouped by the tab the "
+                                                   "keycode belongs to."))
             return
 
         # per tab, in tab order; within a tab best matches first, otherwise original order

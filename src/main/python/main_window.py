@@ -44,6 +44,10 @@ class MainWindow(QMainWindow):
         self.appctx = appctx
 
         self.ui_lock_count = 0
+        if sys.platform == "emscripten":
+            # Qt only shows tooltips for the active window, and Qt for WebAssembly loses window
+            # activation once a tooltip has been shown (QTBUG-94583); show them regardless
+            self.setAttribute(Qt.WA_AlwaysShowToolTips)
 
         self.settings = QSettings("Vial", "Vial")
         if self.settings.value("size", None):
